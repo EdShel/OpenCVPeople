@@ -1,0 +1,22 @@
+%YAML:1.0
+windowSizeX: 50
+windowSizeY: 100
+
+blockSizeX: 20
+blockSizeY: 20
+
+blockStrideX: 10
+blockStrideY: 10
+
+cellSizeX: 10
+cellSizeY: 10
+
+nbins: 9
+derivAperture: 1
+winSigma: -1
+L2HysThreshold: 0.2
+gammaCorrection: 1
+nlevels: 64
+signedGradient: 1
+
+trainRngSeed: 5346654
