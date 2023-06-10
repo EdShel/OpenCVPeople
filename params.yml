@@ -1,17 +1,17 @@
 %YAML:1.0
-windowSizeX: 50
-windowSizeY: 100
+windowSizeX: 128
+windowSizeY: 128
 
-blockSizeX: 20
-blockSizeY: 20
+blockSizeX: 32
+blockSizeY: 32
 
-blockStrideX: 10
-blockStrideY: 10
+blockStrideX: 32
+blockStrideY: 32
 
-cellSizeX: 10
-cellSizeY: 10
+cellSizeX: 16
+cellSizeY: 16
 
-nbins: 9
+nbins: 13
 derivAperture: 1
 winSigma: -1
 L2HysThreshold: 0.2

@@ -12,6 +12,13 @@ std::string combinePath(std::string a, std::string b)
     return a + '/' + b;
 }
 
+std::string fileNameWithoutExtension(std::string path)
+{
+    int dot = path.find_last_of(".");
+    int slash = path.find_last_of("/\\");
+    return path.substr(slash + 1, dot - slash - 1);
+}
+
 std::string fileNameWithExtension(std::string path)
 {
     int slash = path.find_last_of("/\\");

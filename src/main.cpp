@@ -15,6 +15,22 @@ enum Label
     LABEL_BACKGROUND = 2
 };
 
+int testMain();
+
+// std::vector<float> getSvmDetector(const cv::Ptr<cv::ml::SVM> &svm)
+// {
+//     // get the support vectors
+//     cv::Mat sv = svm->getSupportVectors();
+//     const int sv_total = sv.rows;
+//     // get the decision function
+//     cv::Mat alpha, svidx;
+//     double rho = svm->getDecisionFunction(0, alpha, svidx);
+//     std::vector<float> hogDetector(sv.cols + 1);
+//     memcpy(&hogDetector[0], sv.ptr(), sv.cols * sizeof(hogDetector[0]));
+//     hogDetector[sv.cols] = (float)-rho;
+//     return hogDetector;
+// }
+
 void imresizeContain(const cv::Mat &source, cv::Mat &dest, const cv::Size destinationSize)
 {
     cv::Size sourceSize = source.size();
@@ -144,6 +160,7 @@ int main(int argc, char *argv[])
     std::string imagesDir = "../simple/images/";
     std::string annotationsFile = "../simple/bboxes.txt";
     std::string paramsFile = "../params.yml";
+    std::string outputFile = "../model.yml";
 
     cv::FileStorage params(paramsFile, cv::FileStorage::READ);
 
@@ -169,7 +186,6 @@ int main(int argc, char *argv[])
     {
         std::string imageFile = *b;
 
-        std::cout << imageFile << std::endl;
         std::string imagePath = combinePath(imagesDir, imageFile);
         cv::Mat trainImage = cv::imread(imagePath, cv::ImreadModes::IMREAD_GRAYSCALE);
         if (trainImage.empty())
@@ -177,15 +193,12 @@ int main(int argc, char *argv[])
             std::cout << "Cannot open image " << imagePath << std::endl;
             return 1;
         }
-        cv::Mat colImage = cv::imread(imagePath);
-
         std::vector<cv::Rect> peopleBoxes;
         for (int i = 0; i < annotations.size(); i++)
         {
             if (annotations[i].FileName == imageFile)
             {
                 peopleBoxes.push_back(annotations[i].Bbox);
-                cv::rectangle(colImage, annotations[i].Bbox, cv::Scalar(0, 0, 255));
             }
         }
 
@@ -196,7 +209,6 @@ int main(int argc, char *argv[])
             if (!overlapsAny(contourBoxes[i], peopleBoxes))
             {
                 backgroundBoxes.push_back(contourBoxes[i]);
-                cv::rectangle(colImage, contourBoxes[i], cv::Scalar(0, 255, 255));
             }
         }
 
@@ -213,7 +225,7 @@ int main(int argc, char *argv[])
             imageLabels.push_back(Label::LABEL_BACKGROUND);
         }
 
-        cv::imshow("Original", colImage);
+        // cv::imshow("Original", colImage);
 
         for (int i = 0; i < imageBoxes.size(); i++)
         {
@@ -224,15 +236,15 @@ int main(int argc, char *argv[])
             cv::Mat windowImage;
             imresizeContain(sliceImage, windowImage, windowSize);
 
-            cv::namedWindow("Original slice", cv::WINDOW_AUTOSIZE);
-            cv::imshow("Original slice", sliceImage);
+            // cv::namedWindow("Original slice", cv::WINDOW_AUTOSIZE);
+            // cv::imshow("Original slice", sliceImage);
 
-            cv::namedWindow("Slice", cv::WINDOW_AUTOSIZE);
-            cv::imshow("Slice", windowImage);
-            if (cv::waitKey(10000) == -1)
-            {
-                return 0;
-            }
+            // cv::namedWindow("Slice", cv::WINDOW_AUTOSIZE);
+            // cv::imshow("Slice", windowImage);
+            // if (cv::waitKey(10000) == -1)
+            // {
+            //     return 0;
+            // }
 
             hog.compute(windowImage, descriptors);
             trainDataList.push_back(cv::Mat(descriptors).clone());
@@ -241,6 +253,148 @@ int main(int argc, char *argv[])
 
         // hog.compute(trainImage());
         // cv::imshow("Test image", colorfulImage);
+    }
+
+    int trainDataRows = trainDataList.size();
+    int trainDataCols = trainDataList[0].rows;
+    cv::Mat trainDataMatrix(trainDataRows, trainDataCols, CV_32FC1);
+    cv::Mat transposeTmpMatrix(1, trainDataCols, CV_32FC1);
+
+    for (size_t i = 0; i < trainDataList.size(); i++)
+    {
+        cv::transpose(trainDataList[i], transposeTmpMatrix);
+        transposeTmpMatrix.copyTo(trainDataMatrix.row((int)i));
+    }
+
+    auto svm = cv::ml::SVM::create();
+    svm->setType(cv::ml::SVM::C_SVC);
+    svm->setKernel(cv::ml::SVM::LINEAR);
+    svm->trainAuto(trainDataMatrix, cv::ml::ROW_SAMPLE, labelsList);
+
+    svm->save(outputFile);
+
+    return testMain();
+    // return 0;
+}
+
+cv::Mat stdVectorToSamplesCvMat(std::vector<cv::Mat> &vec)
+{
+    int testDataRows = vec.size();
+    int testDataCols = vec[0].rows;
+    cv::Mat testDataMatrix(testDataRows, testDataCols, CV_32FC1);
+    cv::Mat transposeTmpMatrix(1, testDataCols, CV_32FC1);
+
+    for (size_t i = 0; i < vec.size(); i++)
+    {
+        cv::transpose(vec[i], transposeTmpMatrix);
+        transposeTmpMatrix.copyTo(testDataMatrix.row((int)i));
+    }
+
+    return testDataMatrix;
+}
+
+int detectPeople(
+    const cv::Ptr<cv::ml::SVM> &svm,
+    const cv::HOGDescriptor &hog,
+    const cv::Mat image,
+    std::vector<cv::Rect> &locations)
+{
+    std::vector<float> descriptors;
+    std::vector<cv::Mat> testDataList;
+
+    std::vector<cv::Rect> boxes = findBoxesOnBlackBackground(image);
+    for (int i = 0; i < boxes.size(); i++)
+    {
+        cv::Mat imageObject = image(boxes[i]);
+        cv::Mat resizedObject;
+        imresizeContain(imageObject, resizedObject, hog.winSize);
+
+        hog.compute(resizedObject, descriptors);
+        testDataList.push_back(cv::Mat(descriptors).clone());
+    }
+
+    cv::Mat testDataMatrix = stdVectorToSamplesCvMat(testDataList);
+
+    cv::Mat results;
+    svm->predict(testDataMatrix, results, cv::ml::ROW_SAMPLE);
+    // std::vector<cv::Rect> peopleBoxes;
+
+    for (int i = 0; i < results.rows && i < boxes.size(); i++)
+    {
+        if (results.at<float>(1, i) != Label::LABEL_PERSON)
+        {
+            continue;
+        }
+
+        locations.push_back(boxes[i]);
+    }
+
+    return 0;
+}
+
+int testMain()
+{
+    std::string classifierCoefficientsFile = "../model.yml";
+    std::string paramsFile = "../params.yml";
+    std::string outputAnnotationsFile = "../results.txt";
+    std::string imagesDir = "../simple/images/";
+    auto svm = cv::ml::SVM::load(classifierCoefficientsFile);
+
+    cv::FileStorage params(paramsFile, cv::FileStorage::READ);
+    cv::HOGDescriptor hog;
+    createHog(params, hog);
+
+    std::vector<cv::Rect> results;
+
+    bool shouldShow = true;
+
+    std::vector<std::string> testImages = getImagesSorted(imagesDir);
+    std::vector<ImageAnnotation> resultAnnotations;
+    for (auto b = testImages.begin(), e = testImages.end(); b != e; b++)
+    {
+        std::string imageFile = *b;
+        std::string imagePath = combinePath(imagesDir, imageFile);
+        cv::Mat testImage = cv::imread(imagePath, cv::ImreadModes::IMREAD_GRAYSCALE);
+        if (testImage.empty())
+        {
+            std::cout << "Cannot open image " << imagePath << std::endl;
+            return 1;
+        }
+
+        std::vector<cv::Rect> detectionBoxes;
+        if (detectPeople(svm, hog, testImage, detectionBoxes) != 0)
+        {
+            std::cout << "Error during detection" << std::endl;
+            return 1;
+        }
+
+        for (int i = 0; i < detectionBoxes.size(); i++)
+        {
+            ImageAnnotation a;
+            a.FileName = imageFile;
+            a.Bbox = detectionBoxes[i];
+            resultAnnotations.push_back(a);
+        }
+
+        if (shouldShow)
+        {
+            cv::Mat colorfulImage = cv::imread(imagePath);
+            for (int i = 0; i < detectionBoxes.size(); i++)
+            {
+                cv::rectangle(colorfulImage, detectionBoxes[i], cv::Scalar(0, 0, 255));
+            }
+            cv::imshow("Detection", colorfulImage);
+            if (cv::waitKey(5000) == -1)
+            {
+                shouldShow = false;
+            }
+        }
+    }
+
+    if (writeAnnotations(outputAnnotationsFile, resultAnnotations) != 0)
+    {
+        std::cout << "Can't save annotations" << std::endl;
+        return 1;
     }
 
     return 0;

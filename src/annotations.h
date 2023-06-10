@@ -7,4 +7,5 @@ struct ImageAnnotation
     cv::Rect Bbox;
 };
 
-int readAnnotations(std::string file, std::vector<ImageAnnotation> &result);
+int readAnnotations(const std::string file, std::vector<ImageAnnotation> &result);
+int writeAnnotations(const std::string file, const std::vector<ImageAnnotation> &data);
