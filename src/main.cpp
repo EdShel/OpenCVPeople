@@ -164,8 +164,53 @@ std::vector<cv::Rect> findBoxesOnBlackBackground(cv::Mat grayscaleImage)
     return findNonOverlappingBoxes(boundRect);
 }
 
+int evaluateMain()
+{
+    std::string actualAnnotationsFile = "../simple/bboxes.txt";
+    std::string imagesDir = "../simple/images/";
+    std::string paramsFile = "../params.yml";
+    std::string outputFile = "../model.yml";
+
+    cv::FileStorage params(paramsFile, cv::FileStorage::READ);
+    int sampleRngSeed = params["sampleRngSeed"];
+    float sampleSplitRatio = params["sampleSplitRatio"];
+
+    auto allImages = getImagesSorted(imagesDir);
+    auto validationSample = getTrainOrValidationSample(allImages, cv::RNG(sampleRngSeed), sampleSplitRatio, false);
+
+    std::vector<ImageAnnotation> actualAnnotations;
+    if (readAnnotations(actualAnnotationsFile, actualAnnotations) != 0)
+    {
+        std::cout << "Can't read actual annotations" << std::endl;
+        return 1;
+    }
+
+    std::vector<ImageAnnotation> validationAnnotations;
+    for (int i = 0; i < actualAnnotations.size(); i++)
+    {
+        std::string fileName = actualAnnotations[i].FileName;
+        bool isAnnotationFromValidationSet = std::find(validationSample.begin(), validationSample.end(), fileName) != validationSample.end();
+        if (isAnnotationFromValidationSet)
+        {
+            validationAnnotations.push_back(actualAnnotations[i]);
+        }
+    }
+
+    std::string detectedAnnotationsFile = "../results.txt";
+    std::vector<ImageAnnotation> detectedAnnotations;
+    if (readAnnotations(detectedAnnotationsFile, detectedAnnotations) != 0)
+    {
+        std::cout << "Can't read detected annotations" << std::endl;
+        return 1;
+    }
+
+    evaluateDetectionAnnotations(validationAnnotations, detectedAnnotations);
+}
+
 int main(int argc, char *argv[])
 {
+    evaluateMain();
+    return 0;
     // cv::Mat img = cv::imread("../simple/images/6.jpg");
     // std::vector<cv::Rect> boxes = findBoxesOnBlackBackground(img);
 
@@ -301,6 +346,7 @@ int main(int argc, char *argv[])
     svm->save(outputFile);
 
     return testMain();
+
     // return 0;
 }
 

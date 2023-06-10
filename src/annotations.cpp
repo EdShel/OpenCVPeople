@@ -1,5 +1,6 @@
 #include "annotations.h"
 #include "utils.h"
+#include <set>
 #include <fstream>
 #include <iostream>
 
@@ -60,6 +61,90 @@ int writeAnnotations(const std::string file, const std::vector<ImageAnnotation> 
     }
 
     f.close();
-    
+
     return 0;
+}
+
+void evaluateDetectionAnnotations(
+    const std::vector<ImageAnnotation> &actual,
+    const std::vector<ImageAnnotation> &detected)
+{
+    std::set<std::string> allImages;
+    for (auto b = actual.begin(), e = actual.end(); b != e; b++)
+    {
+        allImages.insert(b->FileName);
+    }
+    for (auto b = detected.begin(), e = detected.end(); b != e; b++)
+    {
+        allImages.insert(b->FileName);
+    }
+
+    int truePositives = 0;  // Detected pedestrians who overlap at least 50% with the correct pedestrians
+    int falsePositives = 0; // Detected pedestrians who overlap less than 50% with the correct pedestrians
+    int actualPeopleCount = actual.size();
+
+    for (auto b = allImages.begin(), e = allImages.end(); b != e; b++)
+    {
+        std::string currentImage = *b;
+        std::vector<cv::Rect> actualPeople;
+        std::vector<cv::Rect> detectedPeople;
+
+        for (int i = 0; i < actual.size(); i++)
+        {
+            if (actual[i].FileName == currentImage)
+            {
+                actualPeople.push_back(actual[i].Bbox);
+            }
+        }
+        for (int i = 0; i < detected.size(); i++)
+        {
+            if (detected[i].FileName == currentImage)
+            {
+                detectedPeople.push_back(detected[i].Bbox);
+            }
+        }
+
+        if (actualPeople.size() == 0)
+        {
+            falsePositives += detectedPeople.size();
+            continue;
+        }
+
+        if (detectedPeople.size() == 0)
+        {
+            continue;
+        }
+
+        for (int di = 0; di < detectedPeople.size(); di++)
+        {
+            bool isCorrect = false;
+            cv::Rect detectedBox = detectedPeople[di];
+            for (int ai = 0; ai < actualPeople.size(); ai++)
+            {
+                cv::Rect actualBox = actualPeople[ai];
+                int actualAreaSize = actualBox.area();
+                int overlapAreaSize = (actualBox & detectedBox).area();
+                if (overlapAreaSize >= actualAreaSize / 2)
+                {
+                    isCorrect = true;
+                    break;
+                }
+            }
+
+            if (isCorrect)
+            {
+                truePositives++;
+            }
+            else
+            {
+                falsePositives++;
+            }
+        }
+    }
+
+    double recall = static_cast<double>(truePositives) / actualPeopleCount;
+    double precision = static_cast<double>(truePositives) / (truePositives + falsePositives);
+
+    std::cout << "Recall   : " << recall << std::endl;
+    std::cout << "Precision: " << precision << std::endl;
 }

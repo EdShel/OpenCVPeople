@@ -9,3 +9,6 @@ struct ImageAnnotation
 
 int readAnnotations(const std::string file, std::vector<ImageAnnotation> &result);
 int writeAnnotations(const std::string file, const std::vector<ImageAnnotation> &data);
+void evaluateDetectionAnnotations(
+    const std::vector<ImageAnnotation> &actual,
+    const std::vector<ImageAnnotation> &detected);
