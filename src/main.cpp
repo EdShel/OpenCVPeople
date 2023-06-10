@@ -17,6 +17,32 @@ enum Label
 
 int testMain();
 
+std::vector<std::string> getTrainOrValidationSample(
+    const std::vector<std::string> &fullSet,
+    cv::RNG rng,
+    float splitRate,
+    bool isTrainSample)
+{
+    int trainSetSize = fullSet.size() * splitRate;
+    std::set<int> trainIndices;
+    while (trainIndices.size() < trainSetSize)
+    {
+        int index = rng.uniform(0, trainSetSize);
+        trainIndices.insert(index);
+    }
+
+    std::vector<std::string> result;
+    for (int i = 0; i < fullSet.size(); i++)
+    {
+        bool isElementFromTrainSample = trainIndices.find(i) == trainIndices.end();
+        if (isElementFromTrainSample != isTrainSample)
+        {
+            result.push_back(fullSet[i]);
+        }
+    }
+    return result;
+}
+
 // std::vector<float> getSvmDetector(const cv::Ptr<cv::ml::SVM> &svm)
 // {
 //     // get the support vectors
@@ -170,9 +196,9 @@ int main(int argc, char *argv[])
     std::vector<float> descriptors;
     std::vector<cv::Mat> trainDataList;
     std::vector<int> labelsList;
-    int trainRngSeed = params["trainRngSeed"];
-    cv::RNG rng(trainRngSeed);
     cv::Size windowSize(params["windowSizeX"], params["windowSizeY"]);
+    int sampleRngSeed = params["sampleRngSeed"];
+    float sampleSplitRatio = params["sampleSplitRatio"];
 
     std::vector<ImageAnnotation> annotations;
     if (readAnnotations(annotationsFile, annotations) != 0)
@@ -180,7 +206,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    std::vector<std::string> trainImages = getImagesSorted(imagesDir);
+    std::vector<std::string> allImages = getImagesSorted(imagesDir);
+    std::vector<std::string> trainImages = getTrainOrValidationSample(allImages, cv::RNG(sampleRngSeed), sampleSplitRatio, true);
 
     for (auto b = trainImages.begin(), e = trainImages.end(); b != e; b++)
     {
@@ -317,7 +344,6 @@ int detectPeople(
 
     cv::Mat results;
     svm->predict(testDataMatrix, results, cv::ml::ROW_SAMPLE);
-    // std::vector<cv::Rect> peopleBoxes;
 
     for (int i = 0; i < results.rows && i < boxes.size(); i++)
     {
@@ -344,11 +370,15 @@ int testMain()
     cv::HOGDescriptor hog;
     createHog(params, hog);
 
+    int sampleRngSeed = params["sampleRngSeed"];
+    float sampleSplitRatio = params["sampleSplitRatio"];
+
     std::vector<cv::Rect> results;
 
     bool shouldShow = true;
 
-    std::vector<std::string> testImages = getImagesSorted(imagesDir);
+    std::vector<std::string> allImages = getImagesSorted(imagesDir);
+    std::vector<std::string> testImages = getTrainOrValidationSample(allImages, cv::RNG(sampleRngSeed), sampleSplitRatio, false);
     std::vector<ImageAnnotation> resultAnnotations;
     for (auto b = testImages.begin(), e = testImages.end(); b != e; b++)
     {
