@@ -64,7 +64,7 @@ void createHog(const cv::FileStorage &params, cv::HOGDescriptor &hog)
     hog.cellSize.width = params["cellSizeX"];
     hog.cellSize.height = params["cellSizeY"];
 
-    hog.nbins = 9;
+    hog.nbins = params["nbins"];
     hog.derivAperture = params["derivAperture"];
     hog.winSigma = params["winSigma"];
     hog.L2HysThreshold = params["L2HysThreshold"];
@@ -321,7 +321,7 @@ int detectPeople(
 
     for (int i = 0; i < results.rows && i < boxes.size(); i++)
     {
-        if (results.at<float>(1, i) != Label::LABEL_PERSON)
+        if (results.at<float>(i, 0) != Label::LABEL_PERSON)
         {
             continue;
         }
