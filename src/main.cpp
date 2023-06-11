@@ -14,7 +14,11 @@ enum Label
     LABEL_BACKGROUND = 2
 };
 
-int testMain();
+int detectPeople(
+    const cv::Ptr<cv::ml::SVM> &svm,
+    const cv::HOGDescriptor &hog,
+    const cv::Mat image,
+    std::vector<cv::Rect> &locations);
 
 void createHog(const cv::FileStorage &params, cv::HOGDescriptor &hog)
 {
@@ -39,75 +43,12 @@ void createHog(const cv::FileStorage &params, cv::HOGDescriptor &hog)
     hog.signedGradient = static_cast<int>(params["signedGradient"]) != 0;
 }
 
-int evaluateMain()
+int trainMain(
+    std::string annotationsFile,
+    std::string imagesDir,
+    std::string paramsFile,
+    std::string outputFile)
 {
-    std::string actualAnnotationsFile = "../simple/bboxes.txt";
-    std::string imagesDir = "../simple/images/";
-    std::string paramsFile = "../params.yml";
-    std::string outputFile = "../model.yml";
-
-    cv::FileStorage params(paramsFile, cv::FileStorage::READ);
-    int sampleRngSeed = params["sampleRngSeed"];
-    float sampleSplitRatio = params["sampleSplitRatio"];
-
-    auto allImages = getImagesSorted(imagesDir);
-    auto validationSample = getTrainOrValidationSample(allImages, cv::RNG(sampleRngSeed), sampleSplitRatio, false);
-
-    std::vector<ImageAnnotation> actualAnnotations;
-    if (readAnnotations(actualAnnotationsFile, actualAnnotations) != 0)
-    {
-        std::cout << "Can't read actual annotations" << std::endl;
-        return 1;
-    }
-
-    std::vector<ImageAnnotation> validationAnnotations;
-    for (int i = 0; i < actualAnnotations.size(); i++)
-    {
-        std::string fileName = actualAnnotations[i].FileName;
-        bool isAnnotationFromValidationSet = std::find(validationSample.begin(), validationSample.end(), fileName) != validationSample.end();
-        if (isAnnotationFromValidationSet)
-        {
-            validationAnnotations.push_back(actualAnnotations[i]);
-        }
-    }
-
-    std::string detectedAnnotationsFile = "../results.txt";
-    std::vector<ImageAnnotation> detectedAnnotations;
-    if (readAnnotations(detectedAnnotationsFile, detectedAnnotations) != 0)
-    {
-        std::cout << "Can't read detected annotations" << std::endl;
-        return 1;
-    }
-
-    evaluateDetectionAnnotations(validationAnnotations, detectedAnnotations);
-}
-
-int main(int argc, char *argv[])
-{
-    evaluateMain();
-    return 0;
-    // cv::Mat img = cv::imread("../simple/images/6.jpg");
-    // std::vector<cv::Rect> boxes = findBoxesOnBlackBackground(img);
-
-    // for(int i = 0; i < boxes.size(); i++)
-    // {
-    //     cv::rectangle(img, boxes[i], cv::Scalar(0, 0, 255));
-    // }
-
-    // cv::Mat rsz;
-    // imresizeContain(img, rsz, cv::Size(1280, 666));
-
-    // cv::imshow("TEST1", img);
-    // cv::imshow("TEST2", rsz);
-    // cv::waitKey(0);
-
-    // return 0;
-
-    std::string imagesDir = "../simple/images/";
-    std::string annotationsFile = "../simple/bboxes.txt";
-    std::string paramsFile = "../params.yml";
-    std::string outputFile = "../model.yml";
-
     cv::FileStorage params(paramsFile, cv::FileStorage::READ);
 
     cv::HOGDescriptor hog;
@@ -172,8 +113,6 @@ int main(int argc, char *argv[])
             imageLabels.push_back(Label::LABEL_BACKGROUND);
         }
 
-        // cv::imshow("Original", colImage);
-
         for (int i = 0; i < imageBoxes.size(); i++)
         {
             const cv::Rect box = imageBoxes[i];
@@ -183,23 +122,10 @@ int main(int argc, char *argv[])
             cv::Mat windowImage;
             imresizeContain(sliceImage, windowImage, windowSize);
 
-            // cv::namedWindow("Original slice", cv::WINDOW_AUTOSIZE);
-            // cv::imshow("Original slice", sliceImage);
-
-            // cv::namedWindow("Slice", cv::WINDOW_AUTOSIZE);
-            // cv::imshow("Slice", windowImage);
-            // if (cv::waitKey(10000) == -1)
-            // {
-            //     return 0;
-            // }
-
             hog.compute(windowImage, descriptors);
             trainDataList.push_back(cv::Mat(descriptors).clone());
             labelsList.push_back(label);
         }
-
-        // hog.compute(trainImage());
-        // cv::imshow("Test image", colorfulImage);
     }
 
     int trainDataRows = trainDataList.size();
@@ -220,71 +146,15 @@ int main(int argc, char *argv[])
 
     svm->save(outputFile);
 
-    return testMain();
-
-    // return 0;
-}
-
-cv::Mat stdVectorToSamplesCvMat(std::vector<cv::Mat> &vec)
-{
-    int testDataRows = vec.size();
-    int testDataCols = vec[0].rows;
-    cv::Mat testDataMatrix(testDataRows, testDataCols, CV_32FC1);
-    cv::Mat transposeTmpMatrix(1, testDataCols, CV_32FC1);
-
-    for (size_t i = 0; i < vec.size(); i++)
-    {
-        cv::transpose(vec[i], transposeTmpMatrix);
-        transposeTmpMatrix.copyTo(testDataMatrix.row((int)i));
-    }
-
-    return testDataMatrix;
-}
-
-int detectPeople(
-    const cv::Ptr<cv::ml::SVM> &svm,
-    const cv::HOGDescriptor &hog,
-    const cv::Mat image,
-    std::vector<cv::Rect> &locations)
-{
-    std::vector<float> descriptors;
-    std::vector<cv::Mat> testDataList;
-
-    std::vector<cv::Rect> boxes = findBoxesOnBlackBackground(image);
-    for (int i = 0; i < boxes.size(); i++)
-    {
-        cv::Mat imageObject = image(boxes[i]);
-        cv::Mat resizedObject;
-        imresizeContain(imageObject, resizedObject, hog.winSize);
-
-        hog.compute(resizedObject, descriptors);
-        testDataList.push_back(cv::Mat(descriptors).clone());
-    }
-
-    cv::Mat testDataMatrix = stdVectorToSamplesCvMat(testDataList);
-
-    cv::Mat results;
-    svm->predict(testDataMatrix, results, cv::ml::ROW_SAMPLE);
-
-    for (int i = 0; i < results.rows && i < boxes.size(); i++)
-    {
-        if (results.at<float>(i, 0) != Label::LABEL_PERSON)
-        {
-            continue;
-        }
-
-        locations.push_back(boxes[i]);
-    }
-
     return 0;
 }
 
-int testMain()
+int testMain(
+    std::string imagesDir,
+    std::string paramsFile,
+    std::string classifierCoefficientsFile,
+    std::string outputAnnotationsFile)
 {
-    std::string classifierCoefficientsFile = "../model.yml";
-    std::string paramsFile = "../params.yml";
-    std::string outputAnnotationsFile = "../results.txt";
-    std::string imagesDir = "../simple/images/";
     auto svm = cv::ml::SVM::load(classifierCoefficientsFile);
 
     cv::FileStorage params(paramsFile, cv::FileStorage::READ);
@@ -346,6 +216,190 @@ int testMain()
     {
         std::cout << "Can't save annotations" << std::endl;
         return 1;
+    }
+
+    return 0;
+}
+
+int evaluateMain(
+    std::string imagesDir,
+    std::string paramsFile,
+    std::string actualAnnotationsFile,
+    std::string detectedAnnotationsFile)
+{
+    cv::FileStorage params(paramsFile, cv::FileStorage::READ);
+    int sampleRngSeed = params["sampleRngSeed"];
+    float sampleSplitRatio = params["sampleSplitRatio"];
+
+    auto allImages = getImagesSorted(imagesDir);
+    auto validationSample = getTrainOrValidationSample(allImages, cv::RNG(sampleRngSeed), sampleSplitRatio, false);
+
+    std::vector<ImageAnnotation> actualAnnotations;
+    if (readAnnotations(actualAnnotationsFile, actualAnnotations) != 0)
+    {
+        std::cout << "Can't read actual annotations" << std::endl;
+        return 1;
+    }
+
+    std::vector<ImageAnnotation> validationAnnotations;
+    for (int i = 0; i < actualAnnotations.size(); i++)
+    {
+        std::string fileName = actualAnnotations[i].FileName;
+        bool isAnnotationFromValidationSet = std::find(validationSample.begin(), validationSample.end(), fileName) != validationSample.end();
+        if (isAnnotationFromValidationSet)
+        {
+            validationAnnotations.push_back(actualAnnotations[i]);
+        }
+    }
+
+    std::vector<ImageAnnotation> detectedAnnotations;
+    if (readAnnotations(detectedAnnotationsFile, detectedAnnotations) != 0)
+    {
+        std::cout << "Can't read detected annotations" << std::endl;
+        return 1;
+    }
+
+    evaluateDetectionAnnotations(validationAnnotations, detectedAnnotations);
+
+    return 0;
+}
+
+int detectMain(
+    std::string classifierCoefficientsFile,
+    std::string paramsFile,
+    std::string imagePath)
+{
+    auto svm = cv::ml::SVM::load(classifierCoefficientsFile);
+
+    cv::FileStorage params(paramsFile, cv::FileStorage::READ);
+    cv::HOGDescriptor hog;
+    createHog(params, hog);
+
+    cv::Mat grayscaleImage = cv::imread(imagePath, cv::ImreadModes::IMREAD_GRAYSCALE);
+    if (grayscaleImage.empty())
+    {
+        std::cout << "Cannot open image " << imagePath << std::endl;
+        return 1;
+    }
+
+    std::vector<cv::Rect> detectionBoxes;
+    if (detectPeople(svm, hog, grayscaleImage, detectionBoxes) != 0)
+    {
+        std::cout << "Error during detection" << std::endl;
+        return 1;
+    }
+
+    cv::Mat colorfulImage = cv::imread(imagePath);
+    for (int i = 0; i < detectionBoxes.size(); i++)
+    {
+        cv::rectangle(colorfulImage, detectionBoxes[i], cv::Scalar(0, 0, 255));
+    }
+    cv::imshow("Detection", colorfulImage);
+
+    cv::waitKey(0);
+
+    return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    cv::String cliKeys =
+        "{@commandType|<none>              | Command type               }"
+        "{a           |../simple/bboxes.txt| Annotations file           }"
+        "{i           |../simple/images/   | Images directory           }"
+        "{p           |../params.yml       | Classifier parameters      }"
+        "{c           |../model.yml        | Classifier coefficients    }"
+        "{o           |../results.txt      | Classified annotations file}"
+        "{d           |<none>              | Image to detect pedestrian }";
+    cv::CommandLineParser cli(argc, argv, cliKeys);
+
+    std::string commandType = cli.get<std::string>("@commandType");
+    if (commandType == "train")
+    {
+        return trainMain(
+            cli.get<std::string>("a"),
+            cli.get<std::string>("i"),
+            cli.get<std::string>("p"),
+            cli.get<std::string>("c"));
+    }
+    if (commandType == "test")
+    {
+        return testMain(
+            cli.get<std::string>("i"),
+            cli.get<std::string>("p"),
+            cli.get<std::string>("c"),
+            cli.get<std::string>("o"));
+    }
+    if (commandType == "eval")
+    {
+        return evaluateMain(
+            cli.get<std::string>("i"),
+            cli.get<std::string>("p"),
+            cli.get<std::string>("a"),
+            cli.get<std::string>("o"));
+    }
+    if (commandType == "detect")
+    {
+        return detectMain(
+            cli.get<std::string>("c"),
+            cli.get<std::string>("p"),
+            cli.get<std::string>("d"));
+    }
+
+    std::cout << "Unknown command type." << std::endl;
+    cli.printMessage();
+    return 1;
+}
+
+cv::Mat stdVectorToSamplesCvMat(std::vector<cv::Mat> &vec)
+{
+    int testDataRows = vec.size();
+    int testDataCols = vec[0].rows;
+    cv::Mat testDataMatrix(testDataRows, testDataCols, CV_32FC1);
+    cv::Mat transposeTmpMatrix(1, testDataCols, CV_32FC1);
+
+    for (size_t i = 0; i < vec.size(); i++)
+    {
+        cv::transpose(vec[i], transposeTmpMatrix);
+        transposeTmpMatrix.copyTo(testDataMatrix.row((int)i));
+    }
+
+    return testDataMatrix;
+}
+
+int detectPeople(
+    const cv::Ptr<cv::ml::SVM> &svm,
+    const cv::HOGDescriptor &hog,
+    const cv::Mat image,
+    std::vector<cv::Rect> &locations)
+{
+    std::vector<float> descriptors;
+    std::vector<cv::Mat> testDataList;
+
+    std::vector<cv::Rect> boxes = findBoxesOnBlackBackground(image);
+    for (int i = 0; i < boxes.size(); i++)
+    {
+        cv::Mat imageObject = image(boxes[i]);
+        cv::Mat resizedObject;
+        imresizeContain(imageObject, resizedObject, hog.winSize);
+
+        hog.compute(resizedObject, descriptors);
+        testDataList.push_back(cv::Mat(descriptors).clone());
+    }
+
+    cv::Mat testDataMatrix = stdVectorToSamplesCvMat(testDataList);
+
+    cv::Mat results;
+    svm->predict(testDataMatrix, results, cv::ml::ROW_SAMPLE);
+
+    for (int i = 0; i < results.rows && i < boxes.size(); i++)
+    {
+        if (results.at<float>(i, 0) != Label::LABEL_PERSON)
+        {
+            continue;
+        }
+
+        locations.push_back(boxes[i]);
     }
 
     return 0;
