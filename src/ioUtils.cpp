@@ -1,5 +1,6 @@
 #include <string>
 #include <vector>
+#include <set>
 #include <opencv2/core/core.hpp>
 
 std::string combinePath(std::string a, std::string b)
@@ -38,5 +39,31 @@ std::vector<std::string> getImagesSorted(const std::string imagesDirectory)
     }
     std::sort(result.begin(), result.end());
 
+    return result;
+}
+
+std::vector<std::string> getTrainOrValidationSample(
+    const std::vector<std::string> &fullSet,
+    cv::RNG rng,
+    float splitRate,
+    bool isTrainSample)
+{
+    int trainSetSize = fullSet.size() * splitRate;
+    std::set<int> trainIndices;
+    while (trainIndices.size() < trainSetSize)
+    {
+        int index = rng.uniform(0, trainSetSize);
+        trainIndices.insert(index);
+    }
+
+    std::vector<std::string> result;
+    for (int i = 0; i < fullSet.size(); i++)
+    {
+        bool isElementFromTrainSample = trainIndices.find(i) == trainIndices.end();
+        if (isElementFromTrainSample != isTrainSample)
+        {
+            result.push_back(fullSet[i]);
+        }
+    }
     return result;
 }
